@@ -1,0 +1,165 @@
+Yep — what you’re seeing happens when the wrong half is being rotated (or the transform origin is on the wrong edge), so instead of “closing like a book,” you’re basically hiding/flattening the left side.
+
+To get the behavior you want:
+
+✅ Rotate the LEFT pane
+✅ Around its RIGHT edge (the hinge line)
+✅ So it flips over to cover the RIGHT pane
+✅ And ensure the flipping pane stays on top while closing (z-index)
+
+Here is a single copy-paste React component (Tailwind + Framer Motion) that fixes it.
+
+import React, { useState } from "react";
+import { motion } from "framer-motion";
+
+/**
+ * Copy-paste component.
+ * Requires: framer-motion + Tailwind
+ * Behavior: CLOSE rotates/flips LEFT half over the RIGHT half (like a book).
+ */
+export default function FoldFixLeftCoversRight() {
+  const [closed, setClosed] = useState(false);
+
+  return (
+    <div className="w-full min-h-[70vh] flex flex-col items-center justify-center gap-4 p-6">
+      <div className="flex gap-2">
+        <button
+          className="px-4 py-2 rounded-lg bg-slate-900 text-white disabled:opacity-50"
+          onClick={() => setClosed(true)}
+          disabled={closed}
+        >
+          Close
+        </button>
+        <button
+          className="px-4 py-2 rounded-lg bg-slate-200 text-slate-900 disabled:opacity-50"
+          onClick={() => setClosed(false)}
+          disabled={!closed}
+        >
+          Open
+        </button>
+      </div>
+
+      {/* 3D Stage */}
+      <div
+        className="relative w-full max-w-6xl aspect-[3/1]"
+        style={{
+          perspective: "1400px",
+          perspectiveOrigin: "50% 50%",
+        }}
+      >
+        {/* RIGHT HALF (stays put) */}
+        <div className="absolute inset-y-0 right-0 w-1/2">
+          <HalfBoard label="RIGHT (fixed)" />
+        </div>
+
+        {/* HINGE BAR (visual seam) */}
+        <div className="absolute inset-y-0 left-1/2 w-[10px] -translate-x-1/2 bg-black/30 shadow-[0_0_20px_rgba(0,0,0,0.35)]" />
+
+        {/* LEFT HALF (THIS flips over to cover right) */}
+        <motion.div
+          className="absolute inset-y-0 left-0 w-1/2"
+          style={{
+            transformStyle: "preserve-3d",
+            transformOrigin: "right center", // <-- hinge on the right edge of LEFT half
+            willChange: "transform",
+          }}
+          animate={{
+            rotateY: closed ? 180 : 0, // <-- flip left over right
+            zIndex: closed ? 50 : 10,  // <-- ensure it stays on top while closing
+          }}
+          transition={{
+            type: "spring",
+            stiffness: 260,
+            damping: 28,
+            mass: 0.9,
+          }}
+        >
+          {/* FRONT FACE (what you normally see when open) */}
+          <div
+            className="absolute inset-0"
+            style={{
+              backfaceVisibility: "hidden",
+              WebkitBackfaceVisibility: "hidden",
+              transform: "translateZ(0.5px)", // tiny lift to avoid flicker
+            }}
+          >
+            <HalfBoard label="LEFT (front)" />
+          </div>
+
+          {/* BACK FACE (what you see after it flips) */}
+          <div
+            className="absolute inset-0"
+            style={{
+              backfaceVisibility: "hidden",
+              WebkitBackfaceVisibility: "hidden",
+              transform: "rotateY(180deg) translateZ(0.5px)",
+            }}
+          >
+            {/* This is the “outside” of the left panel when closed */}
+            <HalfBoard label="LEFT (back/outside)" outside />
+          </div>
+        </motion.div>
+
+        {/* Soft shadow that deepens when closed */}
+        <motion.div
+          className="absolute inset-0 rounded-3xl pointer-events-none"
+          animate={{ opacity: closed ? 0.35 : 0.18 }}
+          transition={{ duration: 0.25 }}
+          style={{ boxShadow: "0 30px 90px rgba(0,0,0,0.35)" }}
+        />
+      </div>
+    </div>
+  );
+}
+
+function HalfBoard({
+  label,
+  outside = false,
+}: {
+  label: string;
+  outside?: boolean;
+}) {
+  // Simple wood-ish look; replace with your real board UI later
+  const woodStyle: React.CSSProperties = outside
+    ? {
+        backgroundImage: `
+          linear-gradient(135deg, rgba(0,0,0,0.12), rgba(255,255,255,0.02)),
+          repeating-linear-gradient(90deg,
+            rgba(255,255,255,0.04) 0px,
+            rgba(255,255,255,0.015) 8px,
+            rgba(0,0,0,0.02) 16px
+          ),
+          linear-gradient(180deg, #704225, #5a331c)
+        `,
+      }
+    : {
+        backgroundImage: `
+          linear-gradient(135deg, rgba(0,0,0,0.10), rgba(255,255,255,0.03)),
+          repeating-linear-gradient(90deg,
+            rgba(255,255,255,0.05) 0px,
+            rgba(255,255,255,0.02) 7px,
+            rgba(0,0,0,0.02) 14px
+          ),
+          linear-gradient(180deg, #7a4b2a, #64391f)
+        `,
+      };
+
+  return (
+    <div className="absolute inset-0 p-3">
+      <div
+        className="relative w-full h-full rounded-3xl border border-black/10 shadow-inner overflow-hidden"
+        style={woodStyle}
+      >
+        {/* subtle bevel */}
+        <div className="pointer-events-none absolute inset-0 rounded-3xl ring-1 ring-white/10" />
+
+        {/* demo label (remove in production) */}
+        <div className="absolute top-3 left-4 text-xs text-white/60 font-medium">
+          {label}
+        </div>
+
+        {/* If you want, you can drop your real pits/seeds UI inside here */}
+      </div>
+    </div>
+  );
+}

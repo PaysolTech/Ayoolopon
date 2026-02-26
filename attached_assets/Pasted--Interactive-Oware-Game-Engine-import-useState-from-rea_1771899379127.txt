@@ -1,0 +1,707 @@
+// Interactive Oware Game Engine
+
+import { useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+
+// --- Types ---
+type Player = 'A' | 'B';
+type BowlId = string; // "A1"..."A6", "B1"..."B6"
+
+interface Bowl {
+  id: BowlId;
+  player: Player;
+  count: number;
+}
+
+// --- Initial Data ---
+const INITIAL_BOWLS: Bowl[] = [
+  // Player A (Bottom, Left to Right)
+  { id: 'A1', player: 'A', count: 4 },
+  { id: 'A2', player: 'A', count: 4 },
+  { id: 'A3', player: 'A', count: 4 },
+  { id: 'A4', player: 'A', count: 4 },
+  { id: 'A5', player: 'A', count: 4 },
+  { id: 'A6', player: 'A', count: 4 },
+  // Player B (Top, Right to Left visually)
+  { id: 'B1', player: 'B', count: 4 },
+  { id: 'B2', player: 'B', count: 4 },
+  { id: 'B3', player: 'B', count: 4 },
+  { id: 'B4', player: 'B', count: 4 },
+  { id: 'B5', player: 'B', count: 4 },
+  { id: 'B6', player: 'B', count: 4 },
+];
+
+// Helper: Get the next bowl in the sequence
+const getNextBowlId = (currentId: BowlId): BowlId => {
+  if (currentId === 'A6') return 'B1';
+  if (currentId === 'B6') return 'A1';
+  
+  const prefix = currentId[0];
+  const num = parseInt(currentId[1]);
+  return `${prefix}${num + 1}`;
+};
+
+// Helper: Get previous bowl (for backtracking capture)
+const getPreviousBowlId = (currentId: BowlId): BowlId => {
+  if (currentId === 'A1') return 'B6';
+  if (currentId === 'B1') return 'A6';
+  
+  const prefix = currentId[0];
+  const num = parseInt(currentId[1]);
+  return `${prefix}${num - 1}`;
+};
+
+// Helper to render marbles
+function Marbles({ count, color }: { count: number, color: string }) {
+  const getPosition = (i: number, total: number) => {
+    const offset = 0.5;
+    if (total === 1) return { x: 0, y: 0 };
+    if (total === 2) return { x: i === 0 ? -offset : offset, y: 0 };
+    if (total === 3) return { x: i === 0 ? 0 : i === 1 ? -offset : offset, y: i === 0 ? -offset : offset };
+    if (total === 4) return { x: i % 2 === 0 ? -offset : offset, y: i < 2 ? -offset : offset };
+    if (total === 5) return { x: i === 4 ? 0 : i % 2 === 0 ? -offset : offset, y: i === 4 ? 0 : i < 2 ? -offset : offset };
+    
+    // For 5+ scatter
+    const angle = (i / total) * Math.PI * 2;
+    const radius = 0.6;
+    return { 
+      x: Math.cos(angle) * radius, 
+      y: Math.sin(angle) * radius 
+    };
+  };
+
+  return (
+    <div className="relative w-full h-full flex items-center justify-center pointer-events-none">
+      <AnimatePresence>
+        {Array.from({ length: count }).map((_, i) => {
+          const pos = getPosition(i, count);
+          return (
+            <motion.div
+              key={i}
+              className="absolute rounded-full shadow-md flex items-center justify-center border border-black/10"
+              style={{ 
+                width: '1.6vw', 
+                height: '1.6vw',
+                backgroundColor: color,
+                zIndex: i
+              }}
+              initial={{ scale: 0, opacity: 0 }}
+              animate={{ 
+                scale: 1, 
+                opacity: 1,
+                x: `${pos.x}vw`,
+                y: `${pos.y}vw`
+              }}
+              exit={{ scale: 0, opacity: 0 }}
+              transition={{ type: 'spring', stiffness: 500, damping: 20 }}
+            >
+              <div className="absolute top-[15%] left-[15%] w-[30%] h-[30%] bg-white/60 rounded-full blur-[0.5px]" />
+              <div className="absolute bottom-[10%] right-[10%] w-[40%] h-[40%] bg-black/30 rounded-full blur-[1px]" />
+            </motion.div>
+          );
+        })}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+export default function OwareGame() {
+  // Game State
+  const [bowls, setBowls] = useState<Bowl[]>(INITIAL_BOWLS.map(b => ({...b})));
+  const [currentPlayer, setCurrentPlayer] = useState<Player>('A'); 
+  const [selectedBowl, setSelectedBowl] = useState<BowlId | null>(null);
+  const [isDistributing, setIsDistributing] = useState(false);
+  const [showCounts, setShowCounts] = useState(false);
+  const [storage, setStorage] = useState({ A: 0, B: 0 });
+  const [message, setMessage] = useState("Player A's Turn");
+  
+  // New States
+  const [wins, setWins] = useState({ A: 0, B: 0 });
+  const [isPaused, setIsPaused] = useState(false);
+  const [isGameOver, setIsGameOver] = useState(false);
+  const [isClosed, setIsClosed] = useState(false);
+
+  // Save/Load functionality
+  const saveGame = () => {
+    const gameState = {
+      bowls,
+      currentPlayer,
+      selectedBowl,
+      storage,
+      wins,
+      isPaused,
+      isGameOver,
+      isClosed,
+      message
+    };
+    localStorage.setItem('owareGameState', JSON.stringify(gameState));
+    setMessage("Game saved successfully!");
+  };
+
+  const loadGame = () => {
+    try {
+      const savedState = localStorage.getItem('owareGameState');
+      if (savedState) {
+        const parsed = JSON.parse(savedState);
+        setBowls(parsed.bowls);
+        setCurrentPlayer(parsed.currentPlayer);
+        setSelectedBowl(parsed.selectedBowl);
+        setStorage(parsed.storage);
+        setWins(parsed.wins);
+        setIsPaused(parsed.isPaused);
+        setIsGameOver(parsed.isGameOver);
+        setIsClosed(parsed.isClosed);
+        setMessage("Resumed saved game");
+      } else {
+        setMessage("No saved game found!");
+      }
+    } catch (e) {
+      setMessage("Failed to load saved game");
+    }
+  };
+
+  // Check if game is over
+  const checkEndGame = (currentBowls: Bowl[], nextPlayer: Player) => {
+    const opponent = nextPlayer === 'A' ? 'B' : 'A';
+    const opponentBowls = currentBowls.filter(b => b.player === opponent);
+    const opponentIsEmpty = opponentBowls.every(b => b.count === 0);
+
+    if (opponentIsEmpty) {
+      const playerBowls = currentBowls.filter(b => b.player === nextPlayer);
+      let canFeed = false;
+      for (const b of playerBowls) {
+        const pos = parseInt(b.id[1]); // 1 to 6
+        const distanceToOpponent = 7 - pos;
+        if (b.count >= distanceToOpponent) {
+          canFeed = true;
+          break;
+        }
+      }
+      return !canFeed; // Game over if cannot feed
+    }
+    
+    // Also game over if totally empty board
+    const allEmpty = currentBowls.every(b => b.count === 0);
+    return allEmpty;
+  };
+
+  const handleGameOver = (finalBowls: Bowl[], currentStorageA: number, currentStorageB: number) => {
+    let finalA = currentStorageA;
+    let finalB = currentStorageB;
+    
+    // Add remaining to storage
+    const newBowls = finalBowls.map(b => {
+      if (b.player === 'A') finalA += b.count;
+      if (b.player === 'B') finalB += b.count;
+      return { ...b, count: 0 };
+    });
+
+    setBowls(newBowls);
+    setStorage({ A: finalA, B: finalB });
+    setIsGameOver(true);
+    setSelectedBowl(null);
+
+    if (finalA > finalB) {
+      setMessage(`Game Over! Player A Wins ${finalA} to ${finalB}`);
+      setWins(prev => ({ ...prev, A: prev.A + 1 }));
+    } else if (finalB > finalA) {
+      setMessage(`Game Over! Player B Wins ${finalB} to ${finalA}`);
+      setWins(prev => ({ ...prev, B: prev.B + 1 }));
+    } else {
+      setMessage(`Game Over! It's a Tie ${finalA} to ${finalB}`);
+    }
+  };
+
+  const restartGame = () => {
+    setBowls(INITIAL_BOWLS.map(b => ({...b})));
+    setStorage({ A: 0, B: 0 });
+    setCurrentPlayer('A');
+    setSelectedBowl(null);
+    setIsDistributing(false);
+    setIsGameOver(false);
+    setIsPaused(false);
+    setIsClosed(false);
+    setMessage("Player A's Turn");
+  };
+
+  const endGameEarly = () => {
+    if (isGameOver) return;
+    handleGameOver(bowls, storage.A, storage.B);
+  };
+
+  const toggleClose = () => {
+    if (!isClosed) {
+      // Pack all marbles into storage
+      let finalA = storage.A;
+      let finalB = storage.B;
+      const newBowls = bowls.map(b => {
+        if (b.player === 'A') finalA += b.count;
+        if (b.player === 'B') finalB += b.count;
+        return { ...b, count: 0 };
+      });
+      setBowls(newBowls);
+      setStorage({ A: finalA, B: finalB });
+      setIsClosed(true);
+      setIsGameOver(true); 
+      setSelectedBowl(null);
+      setMessage("Board Closed");
+    } else {
+      setIsClosed(false);
+      setMessage("Board Opened - Click Restart to play");
+    }
+  };
+
+  // Interaction Handlers
+  const handleBowlClick = (bowl: Bowl) => {
+    if (isDistributing || isPaused || isGameOver || isClosed) return;
+    
+    if (bowl.count === 0) {
+      setMessage("This bowl is empty!");
+      return;
+    }
+
+    // Toggle selection
+    if (selectedBowl === bowl.id) {
+      setSelectedBowl(null);
+      setMessage(`Player ${currentPlayer}'s Turn`);
+    } else {
+      setSelectedBowl(bowl.id);
+      if (bowl.player === currentPlayer) {
+        setMessage(`Selected ${bowl.id}. Click PLAY to move.`);
+      } else {
+        setMessage(`Selected ${bowl.id} to view count.`);
+      }
+    }
+  };
+
+  const handlePlay = async () => {
+    if (!selectedBowl || isDistributing || isPaused || isGameOver || isClosed) return;
+    
+    setIsDistributing(true);
+    
+    let currentBowlId = selectedBowl;
+    const newBowls = [...bowls];
+    let keepDistributing = true;
+    let lastBowlId = currentBowlId;
+
+    while (keepDistributing) {
+      setMessage(`Distributing from ${currentBowlId}...`);
+      
+      const sourceIndex = newBowls.findIndex(b => b.id === currentBowlId);
+      let marblesToDistribute = newBowls[sourceIndex].count;
+      
+      // Empty source bowl visually first
+      newBowls[sourceIndex].count = 0;
+      setBowls([...newBowls]);
+      
+      await new Promise(r => setTimeout(r, 500));
+
+      let enteredOpponentSide = false;
+
+      // Distribute loop
+      while (marblesToDistribute > 0) {
+        currentBowlId = getNextBowlId(currentBowlId);
+        
+        // Skip the *original* source bowl of this lap if loop wraps around
+        if (currentBowlId === selectedBowl) continue;
+
+        const targetIndex = newBowls.findIndex(b => b.id === currentBowlId);
+        newBowls[targetIndex].count += 1;
+        marblesToDistribute--;
+        
+        if (newBowls[targetIndex].player !== currentPlayer) {
+          enteredOpponentSide = true;
+        }
+
+        lastBowlId = currentBowlId;
+        
+        // Update state for animation step
+        setBowls([...newBowls]);
+        await new Promise(r => setTimeout(r, 300));
+      }
+
+      // Check continuation rule: landed in OWN bowl with > 1 marble AFTER a round trip (crossing into opponent side)
+      const finalBowlIndex = newBowls.findIndex(b => b.id === lastBowlId);
+      const finalBowl = newBowls[finalBowlIndex];
+
+      if (enteredOpponentSide && finalBowl.player === currentPlayer && finalBowl.count > 1) {
+        // Continue distributing from this bowl
+        setMessage(`Round trip landed in own bowl (${lastBowlId}) with ${finalBowl.count} marbles. Continuing!`);
+        currentBowlId = lastBowlId;
+        await new Promise(r => setTimeout(r, 800));
+      } else {
+        // Stop distributing
+        keepDistributing = false;
+      }
+    }
+
+    // Capture Logic
+    setMessage("Checking for captures...");
+    let captureCount = 0;
+    let currentStorageA = storage.A;
+    let currentStorageB = storage.B;
+    
+    let checkBowlId = lastBowlId;
+    let keepChecking = true;
+
+    const opponent = currentPlayer === 'A' ? 'B' : 'A';
+
+    while (keepChecking) {
+      const bowlIndex = newBowls.findIndex(b => b.id === checkBowlId);
+      const bowl = newBowls[bowlIndex];
+
+      // Oware capture rule: opponent's bowl with 2 or 3 marbles
+      if (bowl.player === opponent && (bowl.count === 2 || bowl.count === 3)) {
+        captureCount += bowl.count;
+        newBowls[bowlIndex].count = 0; // Empty it
+        
+        // Update visual state
+        setBowls([...newBowls]);
+        await new Promise(r => setTimeout(r, 300));
+        
+        // Backtrack
+        checkBowlId = getPreviousBowlId(checkBowlId);
+      } else {
+        keepChecking = false;
+      }
+    }
+
+    if (captureCount > 0) {
+      // Add to storage
+      if (currentPlayer === 'A') currentStorageA += captureCount;
+      if (currentPlayer === 'B') currentStorageB += captureCount;
+      
+      setStorage({ A: currentStorageA, B: currentStorageB });
+      setMessage(`Captured ${captureCount} marbles!`);
+    } else {
+      setMessage("No captures.");
+    }
+    
+    await new Promise(r => setTimeout(r, 1000));
+
+    // Check game over BEFORE ending turn
+    const nextPlayer = currentPlayer === 'A' ? 'B' : 'A';
+    const isOver = checkEndGame(newBowls, nextPlayer);
+
+    if (isOver) {
+      handleGameOver(newBowls, currentStorageA, currentStorageB);
+      setIsDistributing(false);
+      return; // Stop here
+    }
+
+    // End turn logic
+    setSelectedBowl(null);
+    setIsDistributing(false);
+    setCurrentPlayer(nextPlayer);
+    setMessage(`Player ${nextPlayer}'s Turn`);
+  };
+
+  const toggleCounts = () => {
+    setShowCounts(!showCounts);
+  };
+
+  const boardUI = (
+    <div className="relative bg-gradient-to-br from-[#704214] via-[#5C3A21] to-[#4A2511] rounded-[2vw] shadow-[0_2vw_4vw_rgba(0,0,0,0.8),_inset_0_0.2vw_0.5vw_rgba(255,255,255,0.15)] border-[0.4vw] border-[#3E2723] p-[2vw] flex items-center justify-between gap-[2vw] w-full h-full">
+      
+      {/* Subtle Wood Texture Overlay */}
+      <div className="absolute inset-0 rounded-[1.6vw] opacity-[0.15] bg-[url('https://www.transparenttextures.com/patterns/wood-pattern.png')] pointer-events-none mix-blend-multiply" />
+      
+      {/* Vertical Hinge (Center) */}
+      <div className="absolute left-1/2 top-0 bottom-0 w-[0.8vw] -translate-x-1/2 bg-[#2D1606] shadow-[inset_0_0_1vw_rgba(0,0,0,0.9),_0_0_1vw_rgba(0,0,0,0.5)] z-0 flex flex-col justify-around py-[10%]">
+        {/* Metallic Hinge Hardware */}
+        <div className="w-full h-[4vw] bg-gradient-to-r from-stone-600 via-stone-400 to-stone-700 shadow-[0_0.2vw_0.5vw_rgba(0,0,0,0.6)] rounded-sm flex flex-col items-center justify-evenly py-1 border-x border-stone-800">
+           <div className="w-[0.4vw] h-[0.4vw] rounded-full bg-stone-800 shadow-inner" />
+           <div className="w-[0.4vw] h-[0.4vw] rounded-full bg-stone-800 shadow-inner" />
+        </div>
+        <div className="w-full h-[4vw] bg-gradient-to-r from-stone-600 via-stone-400 to-stone-700 shadow-[0_0.2vw_0.5vw_rgba(0,0,0,0.6)] rounded-sm flex flex-col items-center justify-evenly py-1 border-x border-stone-800">
+           <div className="w-[0.4vw] h-[0.4vw] rounded-full bg-stone-800 shadow-inner" />
+           <div className="w-[0.4vw] h-[0.4vw] rounded-full bg-stone-800 shadow-inner" />
+        </div>
+      </div>
+
+      {/* Player B Storage (Left) */}
+      <div className="w-[8vw] h-[30vh] rounded-[3vw] bg-[#2A1708] shadow-[inset_0_1.5vw_2vw_rgba(0,0,0,0.9),_0_0.2vw_0_rgba(255,255,255,0.1)] flex flex-col items-center justify-center relative z-10 border border-[#1A0F05] overflow-hidden">
+        <div className="absolute inset-0 flex flex-wrap items-center justify-center p-2 opacity-50 content-center overflow-hidden">
+           {Array.from({ length: Math.min(storage.B, 50) }).map((_, i) => (
+              <div key={i} className="w-[1.3vw] h-[1.3vw] rounded-full bg-[#9CA3AF] shadow-md border border-black/20 m-[1px] relative">
+                <div className="absolute top-[15%] left-[15%] w-[30%] h-[30%] bg-white/50 rounded-full blur-[0.5px]" />
+              </div>
+           ))}
+        </div>
+        <span className="text-white font-bold text-4xl drop-shadow-xl z-20 mix-blend-overlay">{storage.B}</span>
+        <span className="absolute top-6 text-red-500/50 font-mono text-sm uppercase tracking-widest z-20 mix-blend-screen">B</span>
+      </div>
+
+      {/* Main Playing Area */}
+      <div className="flex flex-col gap-[4vh] relative z-10 flex-1">
+        
+        {/* Player B Controls */}
+        <div className="flex justify-center h-[40px]">
+           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex justify-between w-[25vw] px-[1vw]">
+             <button 
+               onClick={toggleCounts}
+               className="px-6 py-1 bg-stone-800 rounded-full border border-red-500/30 text-red-400 font-mono text-sm uppercase hover:bg-stone-700 transition-colors shadow-lg"
+             >
+               {showCounts ? 'Hide' : 'Count'}
+             </button>
+             <button 
+               onClick={handlePlay}
+               disabled={!selectedBowl || currentPlayer !== 'B' || selectedBowl[0] !== 'B' || isPaused || isGameOver || isClosed}
+               className={`px-6 py-1 rounded-full font-mono text-sm uppercase text-white transition-all shadow-lg ${
+                 selectedBowl && currentPlayer === 'B' && selectedBowl[0] === 'B' && !isPaused && !isGameOver && !isClosed ? 'bg-red-600 shadow-red-900/50 hover:bg-red-500' : 'bg-stone-700 text-stone-500 cursor-not-allowed'
+               }`}
+             >
+               Play
+             </button>
+           </motion.div>
+        </div>
+
+        {/* Player B Row (Top) */}
+        <div className="flex justify-between w-full">
+           {['B6', 'B5', 'B4', 'B3', 'B2', 'B1'].map(id => {
+             const bowl = bowls.find(b => b.id === id)!;
+             const isSelected = selectedBowl === id;
+             return (
+               <motion.div 
+                 key={id}
+                 className="relative flex flex-col items-center group cursor-pointer"
+                 onClick={() => handleBowlClick(bowl)}
+                 whileHover={{ scale: 1.05 }}
+                 animate={isSelected ? { scale: 1.1 } : { scale: 1 }}
+               >
+                 <span className="text-red-400/70 font-mono text-xs mb-3 font-semibold">{id}</span>
+                 <div className={`w-[7vw] h-[7vw] rounded-full bg-[#2A1708] shadow-[inset_0_1vw_1.5vw_rgba(0,0,0,0.9),_0_0.2vw_0_rgba(255,255,255,0.15)] flex items-center justify-center relative transition-colors ${
+                   isSelected ? 'ring-4 ring-red-500/80 bg-[#3A1D10]' : 'hover:ring-2 ring-red-500/40'
+                 }`}>
+                   {/* Marbles */}
+                   <Marbles count={bowl.count} color="#9CA3AF" />
+                   
+                   {/* Count Overlay */}
+                   {showCounts && isSelected && (
+                     <div className="absolute inset-0 flex items-center justify-center bg-black/60 rounded-full z-10 backdrop-blur-sm">
+                       <span className="text-white font-bold text-2xl drop-shadow-lg">{bowl.count}</span>
+                     </div>
+                   )}
+                 </div>
+               </motion.div>
+             );
+           })}
+        </div>
+
+        {/* Player A Row (Bottom) */}
+        <div className="flex justify-between w-full">
+           {['A1', 'A2', 'A3', 'A4', 'A5', 'A6'].map(id => {
+             const bowl = bowls.find(b => b.id === id)!;
+             const isSelected = selectedBowl === id;
+             return (
+               <motion.div 
+                 key={id}
+                 className="relative flex flex-col items-center group cursor-pointer"
+                 onClick={() => handleBowlClick(bowl)}
+                 whileHover={{ scale: 1.05 }}
+                 animate={isSelected ? { scale: 1.1 } : { scale: 1 }}
+               >
+                 <div className={`w-[7vw] h-[7vw] rounded-full bg-[#2A1708] shadow-[inset_0_1vw_1.5vw_rgba(0,0,0,0.9),_0_0.2vw_0_rgba(255,255,255,0.15)] flex items-center justify-center relative transition-colors ${
+                   isSelected ? 'ring-4 ring-blue-500/80 bg-[#3A1D10]' : 'hover:ring-2 ring-blue-500/40'
+                 }`}>
+                   {/* Marbles */}
+                   <Marbles count={bowl.count} color="#9CA3AF" />
+
+                   {/* Count Overlay */}
+                   {showCounts && isSelected && (
+                     <div className="absolute inset-0 flex items-center justify-center bg-black/60 rounded-full z-10 backdrop-blur-sm">
+                       <span className="text-white font-bold text-2xl drop-shadow-lg">{bowl.count}</span>
+                     </div>
+                   )}
+                 </div>
+                 <span className="text-blue-400/70 font-mono text-xs mt-3 font-semibold">{id}</span>
+               </motion.div>
+             );
+           })}
+        </div>
+
+        {/* Player A Controls */}
+        <div className="flex justify-center h-[40px]">
+           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex justify-between w-[25vw] px-[1vw]">
+             <button 
+               onClick={toggleCounts}
+               className="px-6 py-1 bg-stone-800 rounded-full border border-blue-500/30 text-blue-400 font-mono text-sm uppercase hover:bg-stone-700 transition-colors shadow-lg"
+             >
+               {showCounts ? 'Hide' : 'Count'}
+             </button>
+             <button 
+               onClick={handlePlay}
+               disabled={!selectedBowl || currentPlayer !== 'A' || selectedBowl[0] !== 'A' || isPaused || isGameOver || isClosed}
+               className={`px-6 py-1 rounded-full font-mono text-sm uppercase text-white transition-all shadow-lg ${
+                 selectedBowl && currentPlayer === 'A' && selectedBowl[0] === 'A' && !isPaused && !isGameOver && !isClosed ? 'bg-blue-600 shadow-blue-900/50 hover:bg-blue-500' : 'bg-stone-700 text-stone-500 cursor-not-allowed'
+               }`}
+             >
+               Play
+             </button>
+           </motion.div>
+        </div>
+
+      </div>
+
+      {/* Player A Storage (Right) */}
+      <div className="w-[8vw] h-[30vh] rounded-[3vw] bg-[#2A1708] shadow-[inset_0_1.5vw_2vw_rgba(0,0,0,0.9),_0_0.2vw_0_rgba(255,255,255,0.1)] flex flex-col items-center justify-center relative z-10 border border-[#1A0F05] overflow-hidden">
+        <div className="absolute inset-0 flex flex-wrap items-center justify-center p-2 opacity-50 content-center overflow-hidden">
+           {Array.from({ length: Math.min(storage.A, 50) }).map((_, i) => (
+              <div key={i} className="w-[1.3vw] h-[1.3vw] rounded-full bg-[#9CA3AF] shadow-md border border-black/20 m-[1px] relative">
+                <div className="absolute top-[15%] left-[15%] w-[30%] h-[30%] bg-white/50 rounded-full blur-[0.5px]" />
+              </div>
+           ))}
+        </div>
+        <span className="text-white font-bold text-4xl drop-shadow-xl z-20 mix-blend-overlay">{storage.A}</span>
+        <span className="absolute bottom-6 text-blue-500/50 font-mono text-sm uppercase tracking-widest z-20 mix-blend-screen">A</span>
+      </div>
+
+    </div>
+  );
+
+  return (
+    <div className="w-full h-screen bg-stone-900 flex flex-col items-center justify-center relative overflow-hidden select-none">
+      {/* Background Lighting */}
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_#292524,_#1c1917)] pointer-events-none" />
+
+      {/* Global Controls & Score */}
+      <div className="absolute top-8 w-full flex justify-between px-12 z-20">
+        <motion.div 
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+        >
+          <h1 className="text-4xl font-display font-bold text-stone-200 tracking-tight drop-shadow-md">AYO OLOPON</h1>
+          <p className="text-xl text-stone-400 mt-2 font-mono drop-shadow-md">{message}</p>
+        </motion.div>
+
+        {/* Wins Counter & Controls */}
+        <motion.div 
+          className="flex flex-col items-end gap-4"
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+        >
+          <div className="flex gap-6 bg-stone-800/80 px-6 py-2 rounded-2xl border border-stone-700 backdrop-blur-sm shadow-xl">
+            <div className="text-blue-400 font-display font-bold text-xl drop-shadow">PLAYER A <span className="text-white ml-2">{wins.A}</span></div>
+            <div className="w-px bg-stone-600" />
+            <div className="text-red-400 font-display font-bold text-xl drop-shadow">PLAYER B <span className="text-white ml-2">{wins.B}</span></div>
+          </div>
+          
+          <div className="flex gap-3 flex-wrap justify-end max-w-lg">
+            <button 
+              onClick={saveGame}
+              disabled={isDistributing || isGameOver || isClosed}
+              className="px-4 py-2 bg-emerald-800 text-emerald-200 font-mono text-xs uppercase tracking-wider rounded-lg border border-emerald-700 hover:bg-emerald-700 hover:text-white transition-colors disabled:opacity-50 shadow-md"
+            >
+              Save Game
+            </button>
+            <button 
+              onClick={loadGame}
+              disabled={isDistributing}
+              className="px-4 py-2 bg-teal-800 text-teal-200 font-mono text-xs uppercase tracking-wider rounded-lg border border-teal-700 hover:bg-teal-700 hover:text-white transition-colors disabled:opacity-50 shadow-md"
+            >
+              Resume Saved
+            </button>
+            <button 
+              onClick={toggleClose}
+              disabled={isDistributing}
+              className={`px-4 py-2 font-mono text-xs uppercase tracking-wider rounded-lg border transition-colors disabled:opacity-50 shadow-md ${isClosed ? 'bg-indigo-600/20 text-indigo-400 border-indigo-500/50 hover:bg-indigo-600/30' : 'bg-stone-800 text-stone-300 border-stone-700 hover:bg-stone-700 hover:text-white'}`}
+            >
+              {isClosed ? 'Open' : 'Close'}
+            </button>
+            <button 
+              onClick={restartGame}
+              disabled={isDistributing}
+              className="px-4 py-2 bg-purple-800 text-purple-200 font-mono text-xs uppercase tracking-wider rounded-lg border border-purple-700 hover:bg-purple-700 hover:text-white transition-colors disabled:opacity-50 shadow-md"
+            >
+              New Game
+            </button>
+            <button 
+              onClick={restartGame}
+              disabled={isDistributing}
+              className="px-4 py-2 bg-pink-800 text-pink-200 font-mono text-xs uppercase tracking-wider rounded-lg border border-pink-700 hover:bg-pink-700 hover:text-white transition-colors disabled:opacity-50 shadow-md"
+            >
+              Reset
+            </button>
+            <button 
+              onClick={() => setIsPaused(!isPaused)}
+              disabled={isDistributing || isGameOver || isClosed}
+              className={`px-4 py-2 font-mono text-xs uppercase tracking-wider rounded-lg border transition-colors disabled:opacity-50 shadow-md ${isPaused ? 'bg-yellow-600/20 text-yellow-400 border-yellow-500/50 hover:bg-yellow-600/30' : 'bg-orange-800 text-orange-200 border-orange-700 hover:bg-orange-700 hover:text-white'}`}
+            >
+              {isPaused ? 'Resume' : 'Pause'}
+            </button>
+            <button 
+              onClick={endGameEarly}
+              disabled={isDistributing || isGameOver || isClosed}
+              className="px-4 py-2 bg-red-900/80 text-red-200 font-mono text-xs uppercase tracking-wider rounded-lg border border-red-700 hover:bg-red-800 hover:text-white transition-colors disabled:opacity-50 shadow-md"
+            >
+              End
+            </button>
+          </div>
+        </motion.div>
+      </div>
+
+      {/* 3D Folding Board Wrapper */}
+      <div className="relative w-[85vw] max-w-[1200px] flex justify-center" style={{ perspective: '4000px' }}>
+        
+        {/* Invisible sizing wrapper to dictate layout height */}
+        <div className="opacity-0 pointer-events-none w-full">
+          {boardUI}
+        </div>
+
+        {/* LEFT HALF (Stationary) */}
+        <div className="absolute left-0 top-0 w-1/2 h-full z-10">
+          <div className="w-full h-full overflow-hidden relative">
+            <div className="absolute left-0 top-0 w-[200%] h-full">
+              {boardUI}
+            </div>
+          </div>
+        </div>
+
+        {/* RIGHT HALF (Folding) */}
+        <motion.div 
+          className="absolute right-0 top-0 w-1/2 h-full z-20"
+          style={{ transformOrigin: 'left center', transformStyle: 'preserve-3d' }}
+          animate={{ rotateY: isClosed ? -180 : 0 }}
+          transition={{ duration: 1.4, type: 'spring', bounce: 0.15 }}
+        >
+          {/* Front Face of Right Half */}
+          <div className="absolute inset-0" style={{ backfaceVisibility: 'hidden' }}>
+            <div className="w-full h-full overflow-hidden relative">
+              <div className="absolute right-0 top-0 w-[200%] h-full">
+                {boardUI}
+              </div>
+            </div>
+          </div>
+
+          {/* Back Face of Right Half (Revealed when closed) */}
+          <div 
+            className="absolute inset-0 bg-gradient-to-bl from-[#4A2511] to-[#3A1D10] flex flex-col items-center justify-center border-[0.4vw] border-l-0 border-[#2A1708] overflow-hidden shadow-[inset_0_0_5vw_rgba(0,0,0,0.9)]"
+            style={{ 
+              backfaceVisibility: 'hidden', 
+              transform: 'rotateY(180deg)',
+              borderTopRightRadius: '2vw',
+              borderBottomRightRadius: '2vw',
+            }}
+          >
+             <div className="absolute inset-0 opacity-[0.2] bg-[url('https://www.transparenttextures.com/patterns/wood-pattern.png')] pointer-events-none mix-blend-multiply" />
+             <div className="flex flex-col items-center justify-center pointer-events-none select-none">
+               <div className="text-[#1A0F05] font-display font-bold text-6xl opacity-40 drop-shadow-sm tracking-[0.3em]">
+                 AYO
+               </div>
+               <div className="text-[#1A0F05] font-display font-bold text-6xl opacity-40 drop-shadow-sm tracking-[0.3em] mt-4">
+                 OLOPON
+               </div>
+             </div>
+             {/* Box joint details to look like carved wood */}
+             <div className="absolute top-[1vw] right-0 w-[1vw] h-[2vw] bg-[#2A1708] opacity-50" />
+             <div className="absolute top-[4vw] right-0 w-[1vw] h-[2vw] bg-[#2A1708] opacity-50" />
+             <div className="absolute bottom-[4vw] right-0 w-[1vw] h-[2vw] bg-[#2A1708] opacity-50" />
+             <div className="absolute bottom-[1vw] right-0 w-[1vw] h-[2vw] bg-[#2A1708] opacity-50" />
+          </div>
+        </motion.div>
+
+      </div>
+
+    </div>
+  );
+}

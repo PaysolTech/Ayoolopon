@@ -1,0 +1,183 @@
+Project Goal:
+Design a hyper-realistic 3D Mancala board with natural seed pieces and a working center hinge that allows the board to close into half its size when a “Close Board” button is clicked.
+
+🪵 BOARD DESIGN SPECIFICATIONS
+
+Board Type:
+Traditional wooden Mancala board (12 small pits + 2 larger end stores).
+
+Material:
+
+Solid carved African hardwood (mahogany or teak look)
+
+Natural wood grain visible
+
+Slight imperfections and texture variation
+
+Matte finish (not glossy plastic)
+
+Subtle wear marks near pits to simulate real gameplay use
+
+Color Tone:
+
+Warm medium-brown wood
+
+Slight darker edges
+
+Inner pit areas slightly smoother from hand contact
+
+Dimensions (Realistic Proportion):
+
+Length: 18–22 inches (realistic scale)
+
+Each pit carved deeply with smooth rounded edges
+
+Two larger end pits (stores) slightly deeper and wider
+
+🧩 HINGE DESIGN (IMPORTANT)
+
+Board must have a visible metal hinge in the center (between the 6th and 7th pit)
+
+Hinge material: brushed brass or antique metal
+
+Screws visible and slightly recessed
+
+When closed:
+
+Board folds perfectly in half
+
+Seeds remain inside pits (no falling through)
+
+Exterior becomes smooth wood surface
+
+Add smooth folding animation (300–500ms)
+
+Slight wood creak sound optional
+
+Close Button Behavior:
+
+When user clicks “Close Board”:
+
+Trigger hinge rotation at center axis
+
+Smooth rotation animation
+
+Board snaps shut softly
+
+When “Open Board” is clicked:
+
+Reverse animation
+
+Board lays flat on surface
+
+🌰 SEED DESIGN (VERY IMPORTANT)
+
+Seed Type:
+
+Natural game seeds (similar to African Oware seeds)
+
+Small round pebbles or dried seed beads
+
+Slight variation in shape and color
+
+Color Palette:
+
+Light sage green
+
+Muted olive
+
+Pale stone grey
+
+Slight off-white variations
+
+Texture:
+
+Smooth but organic (not perfectly spherical)
+
+Slight surface imperfections
+
+Natural matte finish
+
+Micro-shadow where seeds touch wood
+
+Physics (Optional Enhancement):
+
+Seeds should:
+
+Sit naturally inside curved pit
+
+Slightly overlap randomly
+
+Rotate randomly on redistribution
+
+Have soft collision physics
+
+💡 LIGHTING & ENVIRONMENT
+
+Natural window light from one side
+
+Soft shadows inside pits
+
+Ambient warm light tone
+
+Slight table surface reflection
+
+Background: wooden table or neutral soft surface
+
+🎮 INTERACTION BEHAVIOR
+
+When seeds are redistributed:
+
+Animate seeds moving pit-to-pit
+
+Natural rolling motion
+
+Soft collision sounds
+
+No robotic snapping movement
+
+When board closes:
+
+Seeds remain inside their pits
+
+No clipping through surface
+
+No unrealistic stacking
+
+📦 CAMERA SPECIFICATIONS
+
+Default View:
+
+Slight top-down 30–40° angle
+
+Full board visible
+
+Optional:
+
+Zoom-in animation during seed movement
+
+Slight depth-of-field blur for realism
+
+🎨 Rendering Style
+
+Photorealistic
+
+Not cartoon
+
+Not flat 2D
+
+Real-world proportions
+
+Subtle imperfections to avoid CGI look
+
+🔥 Advanced Enhancement (Optional Premium Realism)
+
+Add:
+
+Tiny scratches near high-use pits
+
+Very subtle dust in corners
+
+Micro wood grain bump mapping
+
+Seed shadow occlusion inside pit curve

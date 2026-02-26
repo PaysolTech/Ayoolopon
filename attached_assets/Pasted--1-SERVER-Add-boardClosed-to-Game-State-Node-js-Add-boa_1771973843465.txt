@@ -1,0 +1,146 @@
+✅ 1️⃣ SERVER — Add boardClosed to Game State (Node.js)
+
+Add boardClosed to your game object.
+
+When creating a game:
+// Example game structure
+const game = {
+  id: gameId,
+  board: [...],
+  scores: {...},
+  status: "active",
+  players: [...],
+  boardClosed: false, // 👈 ADD THIS
+};
+Add toggle handler (reuse existing room structure)
+
+Add this inside your io.on("connection"):
+
+socket.on("pause_game", ({ gameId }) => {
+  const game = games.get(gameId);
+  if (!game) return;
+
+  game.boardClosed = true; // close visually
+
+  io.to(gameId).emit("game_state", game);
+});
+
+socket.on("resume_game", ({ gameId }) => {
+  const game = games.get(gameId);
+  if (!game) return;
+
+  game.boardClosed = false; // open visually
+
+  io.to(gameId).emit("game_state", game);
+});
+
+We’re piggybacking on your existing pause/resume system.
+When paused → board folds.
+When resumed → board opens.
+
+No new event required.
+
+✅ 2️⃣ FRONTEND — Single Copy-Paste React Component (Socket Controlled)
+
+This version:
+
+Listens to game_state
+
+Reads boardClosed
+
+Animates automatically
+
+Emits pause_game / resume_game
+
+Uses your {gameId} room structure
+
+// FoldableBoardWithSocket.tsx
+// Requires: framer-motion + Tailwind
+// Assumes you already have a connected `socket` instance
+
+import React, { useEffect, useState } from "react";
+import { motion } from "framer-motion";
+import { io } from "socket.io-client";
+
+const socket = io(); // or your configured instance
+
+export default function FoldableBoard({ gameId }: { gameId: string }) {
+  const [boardClosed, setBoardClosed] = useState(false);
+
+  useEffect(() => {
+    socket.emit("join_game_room", { gameId });
+
+    socket.on("game_state", (game) => {
+      setBoardClosed(game.boardClosed ?? false);
+    });
+
+    return () => {
+      socket.emit("leave_game_room", { gameId });
+      socket.off("game_state");
+    };
+  }, [gameId]);
+
+  const pauseGame = () => {
+    socket.emit("pause_game", { gameId });
+  };
+
+  const resumeGame = () => {
+    socket.emit("resume_game", { gameId });
+  };
+
+  return (
+    <div className="w-full flex flex-col items-center gap-4 p-6">
+      <div className="flex gap-2">
+        <button
+          className="px-4 py-2 rounded-lg bg-slate-900 text-white"
+          onClick={pauseGame}
+          disabled={boardClosed}
+        >
+          Close Board
+        </button>
+        <button
+          className="px-4 py-2 rounded-lg bg-slate-200"
+          onClick={resumeGame}
+          disabled={!boardClosed}
+        >
+          Open Board
+        </button>
+      </div>
+
+      <div
+        className="relative w-full max-w-5xl aspect-[3/1]"
+        style={{ perspective: "1200px" }}
+      >
+        <div className="absolute inset-0 flex">
+          {/* LEFT HALF */}
+          <BoardHalf />
+          
+          {/* RIGHT HALF (folding side) */}
+          <motion.div
+            className="relative w-1/2 h-full"
+            style={{
+              transformStyle: "preserve-3d",
+              transformOrigin: "left center",
+            }}
+            animate={{ rotateY: boardClosed ? -178 : 0 }}
+            transition={{
+              type: "spring",
+              stiffness: 220,
+              damping: 26,
+            }}
+          >
+            <BoardHalf />
+          </motion.div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function BoardHalf() {
+  return (
+    <div className="relative w-1/2 h-full p-3">
+      <div className="w-full h-full rounded-3xl bg-gradient-to-b from-amber-700 to-amber-900 shadow-inner border border-black/10" />
+    </div>
+  );
+}
